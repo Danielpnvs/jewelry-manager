@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Gem, 
   Package, 
@@ -8,7 +8,8 @@ import {
   TrendingUp,
   DollarSign,
   Menu,
-  X
+  X,
+  Key
 } from 'lucide-react';
 import CadastrarJoias from './components/CadastrarJoias';
 import GerenciarEstoque from './components/GerenciarEstoque';
@@ -17,9 +18,11 @@ import HistoricoVendas from './components/HistoricoVendas';
 import Relatorios from './components/Relatorios';
 import FluxoCaixa from './components/FluxoCaixa';
 import GestaoInvestimentos from './components/GestaoInvestimentos';
+import Login from './components/Login';
+import Account from './components/Account';
 import { Joia } from './types';
 
-type Tab = 'cadastrar' | 'estoque' | 'vendas' | 'historico' | 'relatorios' | 'investimentos' | 'fluxo';
+type Tab = 'cadastrar' | 'estoque' | 'vendas' | 'historico' | 'relatorios' | 'investimentos' | 'fluxo' | 'autenticacao';
 
 const tabs = [
   { id: 'cadastrar' as Tab, label: 'Cadastrar Joias', icon: Gem },
@@ -29,12 +32,22 @@ const tabs = [
   { id: 'relatorios' as Tab, label: 'Relatórios', icon: BarChart3 },
   { id: 'investimentos' as Tab, label: 'Investimentos', icon: TrendingUp },
   { id: 'fluxo' as Tab, label: 'Fluxo de Caixa', icon: DollarSign },
+  { id: 'autenticacao' as Tab, label: 'Autenticação', icon: Key },
 ];
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('cadastrar');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [joiaParaEditar, setJoiaParaEditar] = useState<Joia | null>(null);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setAuthed(localStorage.getItem('solarie_auth') === '1');
+    } catch {
+      setAuthed(false);
+    }
+  }, []);
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -59,10 +72,32 @@ function App() {
         return <GestaoInvestimentos />;
       case 'fluxo':
         return <FluxoCaixa />;
+      case 'autenticacao':
+        return <Account />;
       default:
         return <CadastrarJoias />;
     }
   };
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen bg-[#F7EAA2]">
+        <header className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="relative flex items-center justify-center h-24">
+              <div className="flex items-center">
+                <img src="/sol-icon.png.png" alt="Sol" className="h-12 w-12 mr-4" />
+                <h1 className="text-3xl sm:text-4xl font-extrabold gradient-text text-center">
+                  SOLARIE Acessórios
+                </h1>
+              </div>
+            </div>
+          </div>
+        </header>
+        <Login onSuccess={() => setAuthed(true)} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7EAA2]">
@@ -75,6 +110,18 @@ function App() {
               <h1 className="text-3xl sm:text-4xl font-extrabold gradient-text text-center">
                 SOLARIE Acessórios
               </h1>
+            </div>
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  try { localStorage.removeItem('solarie_auth'); } catch {}
+                  setAuthed(false);
+                }}
+                className="text-sm text-gray-600 hover:text-gray-900 border px-3 py-1 rounded"
+                title="Sair"
+              >
+                Sair
+              </button>
             </div>
             {/* Mobile menu button */}
             <div className="md:hidden absolute right-0">

@@ -217,11 +217,21 @@ const HistoricoVendas: React.FC = () => {
     try {
       const itens = Array.isArray(vendaParaExcluir.itens) ? vendaParaExcluir.itens : [];
       for (const item of itens) {
-        const novaQuantidade = item.joia.quantidade + item.quantidade;
-        await updateJoia(item.joiaId, {
-          quantidade: novaQuantidade,
-          status: 'disponivel'
-        } as Partial<Joia>);
+        const joiaExistente = joias.find(j => j.id === item.joiaId);
+        if (!joiaExistente) {
+          // Joia foi excluída do estoque; não há como repor. Pular e seguir.
+          continue;
+        }
+        const novaQuantidade = joiaExistente.quantidade + item.quantidade;
+        try {
+          await updateJoia(item.joiaId, {
+            quantidade: novaQuantidade,
+            status: 'disponivel'
+          } as Partial<Joia>);
+        } catch (e) {
+          // Falhou ao repor uma joia específica; continuar com as demais e prosseguir com exclusão da venda
+          console.warn('Falha ao repor joia ao excluir venda', item.joiaId, e);
+        }
       }
       await removeVenda(vendaParaExcluir.id);
       setSucesso('Venda excluída com sucesso!');
@@ -231,6 +241,7 @@ const HistoricoVendas: React.FC = () => {
       console.error('Erro ao excluir venda:', e);
     }
   };
+;
 
   if (loading) {
     return (

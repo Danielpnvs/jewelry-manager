@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { DollarSign, PlusCircle, MinusCircle, Calendar, Save, Edit3, Trash2, X } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { Venda } from '../types';
@@ -10,7 +10,7 @@ type Movimento = {
   descricao: string;
   tipo: 'saida';
   origem: 'caixa' | 'embalagem';
-  suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario';
+  suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario_maria' | 'salario_daniel';
   valor: number;
 };
 
@@ -46,20 +46,40 @@ const FluxoCaixa: React.FC = () => {
     };
   }, [vendas, movimentosReg]);
 
-  // Divisão do saldo do caixa em percentuais
-  const [divisaoCaixa, setDivisaoCaixa] = useState<{ reinvestimento: number; caixaLoja: number; salario: number }>({
+  // Divisão do saldo do caixa em percentuais (persistida)
+  const [divisaoCaixa, setDivisaoCaixa] = useState<{ reinvestimento: number; caixaLoja: number; salarioMaria: number; salarioDaniel: number }>({
     reinvestimento: 50,
-    caixaLoja: 30,
-    salario: 20,
+    caixaLoja: 20,
+    salarioMaria: 15,
+    salarioDaniel: 15,
   });
+
+  // Carregar configuração persistida
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('fluxo_divisao_caixa');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          typeof parsed?.reinvestimento === 'number' &&
+          typeof parsed?.caixaLoja === 'number' &&
+          typeof parsed?.salarioMaria === 'number' &&
+          typeof parsed?.salarioDaniel === 'number'
+        ) {
+          setDivisaoCaixa(parsed);
+        }
+      }
+    } catch {}
+  }, []);
 
   const ajustarDivisaoCaixa = (campo: keyof typeof divisaoCaixa, valor: number) => {
     const novo = { ...divisaoCaixa, [campo]: Math.max(0, Math.min(100, valor)) };
-    const soma = novo.reinvestimento + novo.caixaLoja + novo.salario;
+    const soma = novo.reinvestimento + novo.caixaLoja + novo.salarioMaria + novo.salarioDaniel;
     if (soma > 100) {
-      const outros: Array<keyof typeof divisaoCaixa> = ['reinvestimento','caixaLoja','salario'].filter(k => k !== campo) as any;
+      const chaves = ['reinvestimento','caixaLoja','salarioMaria','salarioDaniel'] as const;
+      const outros = chaves.filter(k => k !== campo);
       const excesso = soma - 100;
-      const totalOutros = novo[outros[0]] + novo[outros[1]];
+      const totalOutros = outros.reduce((acc, k) => acc + novo[k], 0);
       if (totalOutros > 0) {
         outros.forEach(k => {
           const proporcao = novo[k] / totalOutros;
@@ -68,6 +88,9 @@ const FluxoCaixa: React.FC = () => {
       }
     }
     setDivisaoCaixa(novo);
+    try {
+      localStorage.setItem('fluxo_divisao_caixa', JSON.stringify(novo));
+    } catch {}
   };
 
   const [form, setForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number }>({
@@ -78,7 +101,7 @@ const FluxoCaixa: React.FC = () => {
   });
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Movimento | null>(null);
-  const [editForm, setEditForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number; suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario' }>({
+  const [editForm, setEditForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number; suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario_maria' | 'salario_daniel' }>({
     data: new Date().toISOString().split('T')[0],
     descricao: '',
     origem: 'caixa',
@@ -86,6 +109,14 @@ const FluxoCaixa: React.FC = () => {
   });
 
   const toTitleCase = (s: string) => s.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+  const formatarSuborigem = (v?: string) => {
+    if (!v) return '';
+    if (v === 'caixa_loja') return 'Caixa da Loja';
+    if (v === 'salario_maria') return 'Salário - Maria Paula';
+    if (v === 'salario_daniel') return 'Salário - Daniel';
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
 
   const registrarSaida = async () => {
     if (!form.descricao.trim() || form.valor <= 0) return;
@@ -132,6 +163,44 @@ const FluxoCaixa: React.FC = () => {
   const excluirMov = async (m: Movimento) => {
     await removeMov(m.id);
   };
+
+  // Saídas por suborigem (caixa)
+  const saidasSub = useMemo(() => {
+    const acc = {
+      reinvestimento: 0,
+      caixa_loja: 0,
+      salario_maria: 0,
+      salario_daniel: 0,
+    };
+    movimentosReg
+      .filter(m => m.origem === 'caixa')
+      .forEach((m) => {
+        const key = ((m as any).suborigem || 'reinvestimento') as keyof typeof acc;
+        if (acc[key] !== undefined) acc[key] += m.valor;
+      });
+    return acc;
+  }, [movimentosReg]);
+
+  // Entradas por bucket com base nas porcentagens
+  const bucketEntradas = useMemo(() => {
+    const total = caixa.totalVendas;
+    return {
+      reinvestimento: total * (divisaoCaixa.reinvestimento / 100),
+      caixa_loja: total * (divisaoCaixa.caixaLoja / 100),
+      salario_maria: total * (divisaoCaixa.salarioMaria / 100),
+      salario_daniel: total * (divisaoCaixa.salarioDaniel / 100),
+    };
+  }, [caixa.totalVendas, divisaoCaixa]);
+
+  // Saldos independentes por bucket (entrada - saída)
+  const bucketSaldos = useMemo(() => {
+    return {
+      reinvestimento: Math.max(0, bucketEntradas.reinvestimento - saidasSub.reinvestimento),
+      caixa_loja: Math.max(0, bucketEntradas.caixa_loja - saidasSub.caixa_loja),
+      salario_maria: Math.max(0, bucketEntradas.salario_maria - saidasSub.salario_maria),
+      salario_daniel: Math.max(0, bucketEntradas.salario_daniel - saidasSub.salario_daniel),
+    };
+  }, [bucketEntradas, saidasSub]);
 
   return (
     <div className="p-6">
@@ -228,7 +297,8 @@ const FluxoCaixa: React.FC = () => {
                 >
                   <option value="reinvestimento">Reinvestimento</option>
                   <option value="caixa_loja">Caixa da Loja</option>
-                  <option value="salario">Salário</option>
+                  <option value="salario_maria">Salário - Maria Paula</option>
+                  <option value="salario_daniel">Salário - Daniel</option>
                 </select>
               </div>
             )}
@@ -275,7 +345,10 @@ const FluxoCaixa: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="font-medium">{m.descricao}</div>
-                      <div className="text-xs text-gray-500">{new Date(m.data).toLocaleDateString('pt-BR')} • Origem: {m.origem}{m.origem==='caixa' && (m as any).suborigem ? ` (${(m as any).suborigem === 'caixa_loja' ? 'Caixa da Loja' : ((m as any).suborigem.charAt(0).toUpperCase() + (m as any).suborigem.slice(1))})` : ''}</div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(m.data).toLocaleDateString('pt-BR')} • Origem: {m.origem}
+                        {m.origem === 'caixa' && (m as any).suborigem ? ` (${formatarSuborigem((m as any).suborigem)})` : ''}
+                      </div>
                     </div>
                     <div className="flex items-center space-x-3">
                       <span className="text-red-600">- {formatarMoeda(m.valor)}</span>
@@ -305,7 +378,7 @@ const FluxoCaixa: React.FC = () => {
       {/* Divisão do Saldo do Caixa */}
       <div className="card mt-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Divisão do Saldo do Caixa</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reinvestimento (%)</label>
             <input
@@ -331,33 +404,53 @@ const FluxoCaixa: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Salário (%)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Salário - Maria Paula (%)</label>
             <input
               type="number"
               min="0"
               max="100"
               step="1"
-              value={divisaoCaixa.salario}
-              onChange={(e) => ajustarDivisaoCaixa('salario', parseFloat(e.target.value) || 0)}
+              value={divisaoCaixa.salarioMaria}
+              onChange={(e) => ajustarDivisaoCaixa('salarioMaria', parseFloat(e.target.value) || 0)}
+              className="input-field"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Salário - Daniel (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={divisaoCaixa.salarioDaniel}
+              onChange={(e) => ajustarDivisaoCaixa('salarioDaniel', parseFloat(e.target.value) || 0)}
               className="input-field"
             />
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
           <div className="p-3 bg-green-50 border border-green-200 rounded">
             <div className="text-gray-600">Reinvestimento</div>
-            <div className="font-semibold text-green-700">{formatarMoeda(caixa.saldoCaixa * (divisaoCaixa.reinvestimento/100))}</div>
+            <div className="font-semibold text-green-700">{formatarMoeda(bucketSaldos.reinvestimento)}</div>
+            <div className="text-xs text-gray-500 mt-1">Saídas: {formatarMoeda(saidasSub.reinvestimento)}</div>
           </div>
           <div className="p-3 bg-blue-50 border border-blue-200 rounded">
             <div className="text-gray-600">Caixa da Loja</div>
-            <div className="font-semibold text-blue-700">{formatarMoeda(caixa.saldoCaixa * (divisaoCaixa.caixaLoja/100))}</div>
+            <div className="font-semibold text-blue-700">{formatarMoeda(bucketSaldos.caixa_loja)}</div>
+            <div className="text-xs text-gray-500 mt-1">Saídas: {formatarMoeda(saidasSub.caixa_loja)}</div>
           </div>
           <div className="p-3 bg-purple-50 border border-purple-200 rounded">
-            <div className="text-gray-600">Salário</div>
-            <div className="font-semibold text-purple-700">{formatarMoeda(caixa.saldoCaixa * (divisaoCaixa.salario/100))}</div>
+            <div className="text-gray-600">Salário - Maria Paula</div>
+            <div className="font-semibold text-purple-700">{formatarMoeda(bucketSaldos.salario_maria)}</div>
+            <div className="text-xs text-gray-500 mt-1">Saídas: {formatarMoeda(saidasSub.salario_maria)}</div>
+          </div>
+          <div className="p-3 bg-purple-50 border border-purple-200 rounded">
+            <div className="text-gray-600">Salário - Daniel</div>
+            <div className="font-semibold text-purple-700">{formatarMoeda(bucketSaldos.salario_daniel)}</div>
+            <div className="text-xs text-gray-500 mt-1">Saídas: {formatarMoeda(saidasSub.salario_daniel)}</div>
           </div>
         </div>
-        <div className="mt-2 text-xs text-gray-500">Total: {(divisaoCaixa.reinvestimento + divisaoCaixa.caixaLoja + divisaoCaixa.salario).toFixed(0)}%</div>
+        <div className="mt-2 text-xs text-gray-500">Total: {(divisaoCaixa.reinvestimento + divisaoCaixa.caixaLoja + divisaoCaixa.salarioMaria + divisaoCaixa.salarioDaniel).toFixed(0)}%</div>
       </div>
 
       {/* Modal editar movimentação */}
@@ -404,7 +497,8 @@ const FluxoCaixa: React.FC = () => {
                   >
                     <option value="reinvestimento">Reinvestimento</option>
                     <option value="caixa_loja">Caixa da Loja</option>
-                    <option value="salario">Salário</option>
+                    <option value="salario_maria">Salário - Maria Paula</option>
+                    <option value="salario_daniel">Salário - Daniel</option>
                   </select>
                 </div>
               )}
