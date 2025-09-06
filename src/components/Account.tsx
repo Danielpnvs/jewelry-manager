@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getPasswordHash, setPasswordHash, sha256Hex } from '../services/authConfig';
+import { getPasswordHash, getPasswordMeta, setPasswordHash, sha256Hex } from '../services/authConfig';
 
 const STORAGE_PWD_HASH = 'solarie_pwd_hash';
 const STORAGE_AUTH = 'solarie_auth';
@@ -10,11 +10,23 @@ const Account: React.FC = () => {
   const [confirm, setConfirm] = useState('');
   const [saved, setSaved] = useState('');
   const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<Date | undefined>(undefined);
 
   useEffect(() => {
     setSaved('');
     setError('');
   }, [currentPassword, newPassword, confirm]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const meta = await getPasswordMeta();
+        setLastUpdated(meta.updatedAt);
+      } catch {
+        setLastUpdated(undefined);
+      }
+    })();
+  }, []);
 
   const save = async () => {
     setSaved('');
@@ -42,6 +54,10 @@ const Account: React.FC = () => {
       await setPasswordHash(hash);
       localStorage.setItem(STORAGE_PWD_HASH, hash);
       setSaved('Senha atualizada com sucesso.');
+      try {
+        const meta = await getPasswordMeta();
+        setLastUpdated(meta.updatedAt);
+      } catch {}
     } catch {
       setError('Falha ao salvar senha.');
     }
@@ -59,6 +75,13 @@ const Account: React.FC = () => {
   return (
     <div className="p-4">
       <h3 className="text-lg font-semibold text-gray-900 mb-3">Autenticação</h3>
+      <div className="mb-4 text-sm text-gray-600">
+        {lastUpdated ? (
+          <span>Última alteração da senha: <span className="font-medium">{lastUpdated.toLocaleDateString('pt-BR')} às {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></span>
+        ) : (
+          <span>Informações de alteração da senha ainda não registradas.</span>
+        )}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Senha Atual</label>

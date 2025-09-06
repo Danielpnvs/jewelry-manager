@@ -38,3 +38,25 @@ export async function setPasswordHash(newHash: string): Promise<void> {
   const ref = doc(db, COLLECTION, DOC_ID);
   await setDoc(ref, { passwordHash: newHash, updatedAt: new Date() }, { merge: true });
 }
+
+export type PasswordMeta = {
+  passwordHash: string;
+  updatedAt?: Date;
+};
+
+export async function getPasswordMeta(): Promise<PasswordMeta> {
+  const ref = doc(db, COLLECTION, DOC_ID);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await ensureDefaultPassword();
+    const again = await getDoc(ref);
+    const data = again.data() || {};
+    const ts: any = data.updatedAt;
+    const updatedAt: Date | undefined = ts && typeof ts.toDate === 'function' ? ts.toDate() : (ts instanceof Date ? ts : undefined);
+    return { passwordHash: data.passwordHash || '', updatedAt };
+  }
+  const data = snap.data() || {};
+  const ts: any = data.updatedAt;
+  const updatedAt: Date | undefined = ts && typeof ts.toDate === 'function' ? ts.toDate() : (ts instanceof Date ? ts : undefined);
+  return { passwordHash: data.passwordHash || '', updatedAt };
+}

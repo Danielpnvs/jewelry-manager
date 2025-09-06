@@ -25,37 +25,42 @@ const GestaoInvestimentos: React.FC = () => {
 
   const loading = loadingJoias || loadingLotes || loadingVendas;
 
-  // Agrupar joias por fornecedor para criar lotes
+  // Agrupar joias por fornecedor + dataCompra (lote por data)
   const lotesPorFornecedor = useMemo(() => {
     const grupos = new Map<string, Joia[]>();
-    
     joias.forEach(joia => {
-      if (!grupos.has(joia.fornecedor)) {
-        grupos.set(joia.fornecedor, []);
+      const data = joia.dataCompra ? new Date(joia.dataCompra) : undefined;
+      const chaveData = data ? new Date(data.getFullYear(), data.getMonth(), data.getDate()).toISOString().split('T')[0] : 'sem-data';
+      const chave = `${joia.fornecedor}__${chaveData}`;
+      if (!grupos.has(chave)) {
+        grupos.set(chave, []);
       }
-      grupos.get(joia.fornecedor)!.push(joia);
+      grupos.get(chave)!.push(joia);
     });
 
-    // Mapear vendas por fornecedor
-    const vendasPorFornecedor = new Map<string, { valorVendido: number; lucroObtido: number; quantidadeVendida: number; valorEmbalagem: number }>();
+    // Mapear vendas por fornecedor+dataCompra
+    const vendasPorGrupo = new Map<string, { valorVendido: number; lucroObtido: number; quantidadeVendida: number; valorEmbalagem: number }>();
     vendas.forEach(venda => {
       const itens = Array.isArray(venda.itens) ? venda.itens : [];
       itens.forEach(item => {
-        const fornecedor = item.joia.fornecedor;
-        const atual = vendasPorFornecedor.get(fornecedor) || { valorVendido: 0, lucroObtido: 0, quantidadeVendida: 0, valorEmbalagem: 0 };
+        const data = item.joia.dataCompra ? new Date(item.joia.dataCompra) : undefined;
+        const chaveData = data ? new Date(data.getFullYear(), data.getMonth(), data.getDate()).toISOString().split('T')[0] : 'sem-data';
+        const chave = `${item.joia.fornecedor}__${chaveData}`;
+        const atual = vendasPorGrupo.get(chave) || { valorVendido: 0, lucroObtido: 0, quantidadeVendida: 0, valorEmbalagem: 0 };
         atual.valorVendido += item.subtotal;
         atual.lucroObtido += (item.precoUnitario - item.joia.custoAquisicao) * item.quantidade;
         atual.quantidadeVendida += item.quantidade;
         atual.valorEmbalagem += (item.joia.custoEmbalagem || 0) * item.quantidade;
-        vendasPorFornecedor.set(fornecedor, atual);
+        vendasPorGrupo.set(chave, atual);
       });
     });
 
-    return Array.from(grupos.entries()).map(([fornecedor, joiasLote]) => {
+    return Array.from(grupos.entries()).map(([chave, joiasLote]) => {
+      const [fornecedor, dataStr] = chave.split('__');
       const valorInvestido = joiasLote.reduce((total, joia) => 
         total + (joia.custoAquisicao * joia.quantidade), 0
       );
-      const vendasFornecedor = vendasPorFornecedor.get(fornecedor) || { valorVendido: 0, lucroObtido: 0, quantidadeVendida: 0, valorEmbalagem: 0 };
+      const vendasFornecedor = vendasPorGrupo.get(chave) || { valorVendido: 0, lucroObtido: 0, quantidadeVendida: 0, valorEmbalagem: 0 };
       const valorVendido = vendasFornecedor.valorVendido;
       const lucroObtido = vendasFornecedor.lucroObtido;
       const totalJoias = joiasLote.reduce((total, joia) => total + joia.quantidade, 0);
@@ -64,7 +69,7 @@ const GestaoInvestimentos: React.FC = () => {
       const valorEmbalagemVendida = vendasFornecedor.valorEmbalagem;
 
       // Buscar configuração de divisão de lucro existente ou usar padrão
-      const loteExistente = lotes.find(lote => lote.fornecedor === fornecedor);
+      const loteExistente = lotes.find(lote => (lote as any).fornecedor === fornecedor && ((lote as any).dataLote === dataStr));
       const divisaoLucroConfig = loteExistente?.divisaoLucro || {
         reinvestimento: 50,
         reservaEmergencia: 30,
@@ -72,7 +77,7 @@ const GestaoInvestimentos: React.FC = () => {
       };
 
       return {
-        id: loteExistente?.id || `temp-${fornecedor}`,
+        id: loteExistente?.id || `temp-${fornecedor}-${dataStr}`,
         fornecedor,
         joias: joiasLote,
         valorInvestido,
@@ -83,7 +88,8 @@ const GestaoInvestimentos: React.FC = () => {
         valorEmbalagemVendida,
         divisaoLucro: divisaoLucroConfig,
         createdAt: loteExistente?.createdAt || new Date(),
-        updatedAt: loteExistente?.updatedAt || new Date()
+        updatedAt: loteExistente?.updatedAt || new Date(),
+        dataLote: dataStr
       } as LoteInvestimento;
     });
   }, [joias, lotes, vendas]);
@@ -196,12 +202,13 @@ const GestaoInvestimentos: React.FC = () => {
           {lotesPorFornecedor.map((lote) => {
             const baseDistribuicao = Math.max(0, lote.valorVendido - (lote as any).valorEmbalagemVendida || 0);
             const distribuicao = calcularDistribuicaoLucro(baseDistribuicao, lote.divisaoLucro);
+            const dataLoteFmt = (lote as any).dataLote ? new Date((((lote as any).dataLote as string) + 'T12:00:00')).toLocaleDateString('pt-BR') : '';
             
             return (
               <div key={lote.id} className="card hover:shadow-lg transition-shadow duration-200">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900 truncate">
-                    {lote.fornecedor}
+                    {lote.fornecedor}{dataLoteFmt ? ` • ${dataLoteFmt}` : ''}
                   </h3>
                   <div className="flex space-x-1">
                     <button
@@ -504,4 +511,3 @@ const GestaoInvestimentos: React.FC = () => {
 };
 
 export default GestaoInvestimentos;
-
