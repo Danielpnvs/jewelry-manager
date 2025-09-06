@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react';
+import { getPasswordHash, setPasswordHash, sha256Hex } from '../services/authConfig';
 
 const STORAGE_PWD_HASH = 'solarie_pwd_hash';
 const STORAGE_AUTH = 'solarie_auth';
-
-async function sha256Hex(message: string): Promise<string> {
-  const enc = new TextEncoder();
-  const data = enc.encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
-}
 
 const Account: React.FC = () => {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -27,14 +19,13 @@ const Account: React.FC = () => {
   const save = async () => {
     setSaved('');
     setError('');
-    // validar atual
     if (!currentPassword) {
       setError('Informe a senha atual.');
       return;
     }
-    const stored = localStorage.getItem(STORAGE_PWD_HASH) || '';
+    const storedRemote = await getPasswordHash();
     const currentHash = await sha256Hex(currentPassword);
-    if (!stored || stored !== currentHash) {
+    if (!storedRemote || storedRemote !== currentHash) {
       setError('Senha atual incorreta.');
       return;
     }
@@ -48,6 +39,7 @@ const Account: React.FC = () => {
     }
     const hash = await sha256Hex(newPassword);
     try {
+      await setPasswordHash(hash);
       localStorage.setItem(STORAGE_PWD_HASH, hash);
       setSaved('Senha atualizada com sucesso.');
     } catch {
@@ -58,7 +50,6 @@ const Account: React.FC = () => {
   const logout = () => {
     try {
       localStorage.removeItem(STORAGE_AUTH);
-      // dispara evento simples para que o App reaja e mostre login
       window.dispatchEvent(new Event('storage'));
     } catch {
       // ignore

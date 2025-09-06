@@ -1,18 +1,9 @@
 import { useEffect, useState } from 'react';
+import { ensureDefaultPassword, getPasswordHash, sha256Hex } from '../services/authConfig';
 
 const FIXED_EMAIL = 'solarieacessorioss@gmail.com';
 const STORAGE_AUTH = 'solarie_auth';
 const STORAGE_PWD_HASH = 'solarie_pwd_hash';
-const DEFAULT_PASSWORD = 'solarie123';
-
-async function sha256Hex(message: string): Promise<string> {
-  const enc = new TextEncoder();
-  const data = enc.encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
-}
 
 type Props = {
   onSuccess: () => void;
@@ -26,11 +17,10 @@ const Login: React.FC<Props> = ({ onSuccess }) => {
   useEffect(() => {
     (async () => {
       try {
-        const existing = localStorage.getItem(STORAGE_PWD_HASH);
-        if (!existing) {
-          const initial = await sha256Hex(DEFAULT_PASSWORD);
-          localStorage.setItem(STORAGE_PWD_HASH, initial);
-        }
+        // garante senha remota e sincroniza cache local
+        await ensureDefaultPassword();
+        const remoteHash = await getPasswordHash();
+        localStorage.setItem(STORAGE_PWD_HASH, remoteHash);
       } catch {
         // ignore
       }
