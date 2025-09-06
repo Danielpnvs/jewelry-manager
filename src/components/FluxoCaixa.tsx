@@ -93,77 +93,6 @@ const FluxoCaixa: React.FC = () => {
     } catch {}
   };
 
-  const [form, setForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number }>({
-    data: new Date().toISOString().split('T')[0],
-    descricao: '',
-    origem: 'caixa',
-    valor: 0,
-  });
-  const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState<Movimento | null>(null);
-  const [editForm, setEditForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number; suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario_maria' | 'salario_daniel' }>({
-    data: new Date().toISOString().split('T')[0],
-    descricao: '',
-    origem: 'caixa',
-    valor: 0,
-  });
-
-  const toTitleCase = (s: string) => s.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-
-  const formatarSuborigem = (v?: string) => {
-    if (!v) return '';
-    if (v === 'caixa_loja') return 'Caixa da Loja';
-    if (v === 'salario_maria') return 'Salário - Maria Paula';
-    if (v === 'salario_daniel') return 'Salário - Daniel';
-    return v.charAt(0).toUpperCase() + v.slice(1);
-  };
-
-  const registrarSaida = async () => {
-    if (!form.descricao.trim() || form.valor <= 0) return;
-    try {
-      setSaving(true);
-      await addMov({
-        data: new Date(`${form.data}T12:00:00`),
-        descricao: toTitleCase(form.descricao.trim()),
-        tipo: 'saida',
-        origem: form.origem,
-        suborigem: form.origem === 'caixa' ? ((form as any).suborigem || 'reinvestimento') : undefined,
-        valor: form.valor,
-      } as unknown as Movimento);
-      setForm({ data: new Date().toISOString().split('T')[0], descricao: '', origem: 'caixa', valor: 0 });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const abrirEdicao = (m: Movimento) => {
-    setEditing(m);
-    setEditForm({
-      data: new Date(m.data).toISOString().split('T')[0],
-      descricao: m.descricao,
-      origem: m.origem,
-      valor: m.valor,
-      suborigem: (m as any).suborigem,
-    });
-  };
-
-  const salvarEdicao = async () => {
-    if (!editing) return;
-    if (!editForm.descricao.trim() || editForm.valor <= 0) return;
-    await updateMov(editing.id, {
-      data: new Date(`${editForm.data}T12:00:00`),
-      descricao: toTitleCase(editForm.descricao.trim()),
-      origem: editForm.origem,
-      valor: editForm.valor,
-      suborigem: editForm.origem === 'caixa' ? (editForm.suborigem || 'reinvestimento') : undefined,
-    } as any);
-    setEditing(null);
-  };
-
-  const excluirMov = async (m: Movimento) => {
-    await removeMov(m.id);
-  };
-
   // Saídas por suborigem (caixa)
   const saidasSub = useMemo(() => {
     const acc = {
@@ -201,6 +130,85 @@ const FluxoCaixa: React.FC = () => {
       salario_daniel: Math.max(0, bucketEntradas.salario_daniel - saidasSub.salario_daniel),
     };
   }, [bucketEntradas, saidasSub]);
+
+  const [form, setForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number }>({
+    data: new Date().toISOString().split('T')[0],
+    descricao: '',
+    origem: 'caixa',
+    valor: 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Movimento | null>(null);
+  const [editForm, setEditForm] = useState<{ data: string; descricao: string; origem: Movimento['origem']; valor: number; suborigem?: 'reinvestimento' | 'caixa_loja' | 'salario' }>({
+    data: new Date().toISOString().split('T')[0],
+    descricao: '',
+    origem: 'caixa',
+    valor: 0,
+  });
+
+  const toTitleCase = (s: string) => s.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+  const formatarSuborigem = (v?: string) => {
+    if (!v) return '';
+    if (v === 'caixa_loja') return 'Caixa da Loja';
+    if (v === 'salario_maria') return 'Salário - Maria Paula';
+    if (v === 'salario_daniel') return 'Salário - Daniel';
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  };
+
+  const registrarSaida = async () => {
+    if (!form.descricao.trim() || form.valor <= 0) return;
+    try {
+      setSaving(true);
+      const payload: any = {
+        data: new Date(`${form.data}T12:00:00`),
+        descricao: toTitleCase(form.descricao.trim()),
+        tipo: 'saida',
+        origem: form.origem,
+        valor: form.valor,
+      };
+      if (form.origem === 'caixa') {
+        payload.suborigem = (form as any).suborigem || 'reinvestimento';
+      }
+      await addMov(payload as Movimento);
+      setForm({ data: new Date().toISOString().split('T')[0], descricao: '', origem: 'caixa', valor: 0 });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const abrirEdicao = (m: Movimento) => {
+    setEditing(m);
+    setEditForm({
+      data: new Date(m.data).toISOString().split('T')[0],
+      descricao: m.descricao,
+      origem: m.origem,
+      valor: m.valor,
+      suborigem: (m as any).suborigem,
+    });
+  };
+
+  const salvarEdicao = async () => {
+    if (!editing) return;
+    if (!editForm.descricao.trim() || editForm.valor <= 0) return;
+    const updates: any = {
+      data: new Date(`${editForm.data}T12:00:00`),
+      descricao: toTitleCase(editForm.descricao.trim()),
+      origem: editForm.origem,
+      valor: editForm.valor,
+    };
+    if (editForm.origem === 'caixa') {
+      updates.suborigem = editForm.suborigem || 'reinvestimento';
+    } else {
+      updates.suborigem = null;
+    }
+    await updateMov(editing.id, updates as any);
+    setEditing(null);
+  };
+
+  const excluirMov = async (m: Movimento) => {
+    await removeMov(m.id);
+  };
 
   return (
     <div className="p-6">
@@ -404,7 +412,7 @@ const FluxoCaixa: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Salário - Maria Paula (%)</label>
+            <label className="block text sm font-medium text-gray-700 mb-1">Salário - Maria Paula (%)</label>
             <input
               type="number"
               min="0"
@@ -535,3 +543,4 @@ const FluxoCaixa: React.FC = () => {
 };
 
 export default FluxoCaixa;
+
